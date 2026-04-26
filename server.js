@@ -55,7 +55,7 @@ app.post('/submit', upload.single('photo'), async (req, res) => {
 // ── GET /pipeline ─────────────────────────────────────────────────────────────
 app.get('/pipeline', async (req, res) => {
   try {
-    const domain = [['type', '=', 'lead']];
+    const domain = [];
     if (req.query.userId) domain.push(['user_id', '=', parseInt(req.query.userId)]);
 
     const leads = await odoo.call('crm.lead', 'search_read', [domain], {
