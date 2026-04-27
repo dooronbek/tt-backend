@@ -267,8 +267,12 @@ app.post('/order/:id/pay', async (req, res) => {
 });
 
 app.post('/order/:id/confirm', async (req, res) => {
-      const orderId = parseInt(req.params.id);res.status(500).json({ error: err.message }); }
-         });
+        const orderId = parseInt(req.params.id);
+        try {
+                  await odoo.call('sale.order', 'action_confirm', [[orderId]]);
+                  res.json({ ok: true, orderId });
+        } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 const PORT = process.env.PORT || 3001; 
 app.listen(PORT, () => {
