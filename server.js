@@ -15,8 +15,8 @@ app.use(express.json({ limit: '15mb' }));
 // New (58 records), Proposition (74 records), Qualified (5 records)
 const STAGE_MAP = {
         'New':         'Неактивные',
-        'Proposition': 'На рассмотрении',
-        'Qualified':   'Активные',
+                'Proposition': 'Активные',
+                'Qualified':   'На рассмотрении',
         'Won':         'Активные',
         'Lost':        'Отказали',
         'Cancelled':   'Отказали',
