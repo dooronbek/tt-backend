@@ -268,6 +268,8 @@ app.post('/order/:id/deliver', async (req, res) => {
 app.post('/order/:id/pay', async (req, res) => {
   const orderId = parseInt(req.params.id);
   const { payMethod } = req.body || {};
+  // Journal IDs: Cash=9, Bank(Mbusiness)=6
+  const journalId = payMethod === 'Перевод' ? 6 : 9;
   const https = require('https');
   const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/, '');
   const ODOO_DB  = process.env.ODOO_DB  || 'kyraan';
@@ -306,7 +308,7 @@ app.post('/order/:id/pay', async (req, res) => {
     // Check existing invoices
     const order = await odooRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
     let invoiceIds = order[0].invoice_ids || [];
-    // Create invoice via wizard using browser session (works unlike XML-RPC)
+    // Create invoice via wizard if none exists
     if (!invoiceIds.length) {
       const wizId = await odooRpc(sid, 'sale.advance.payment.inv', 'create', [{advance_payment_method:'delivered', sale_order_ids:[orderId]}]);
       await odooRpc(sid, 'sale.advance.payment.inv', 'create_invoices', [[wizId]]);
@@ -314,9 +316,13 @@ app.post('/order/:id/pay', async (req, res) => {
       invoiceIds = order2[0].invoice_ids || [];
     }
     if (!invoiceIds.length) throw new Error('Не удалось создать счёт. Проверьте доставку.');
-    // Post all draft invoices
+    // Find draft invoices, set journal, then post
     const drafts = await odooRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
-    if (drafts.length) await odooRpc(sid, 'account.move', 'action_post', [drafts]);
+    if (!drafts.length) throw new Error('Счёт уже подтверждён');
+    // Set payment journal (метод платежа)
+    await odooRpc(sid, 'account.move', 'write', [drafts, { journal_id: journalId }]);
+    // Confirm the invoice
+    await odooRpc(sid, 'account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
 });
