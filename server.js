@@ -270,12 +270,38 @@ app.post('/order/:id/pay', async (req, res) => {
   const { payMethod } = req.body || {};
   try {
     if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
-    // Create invoice via wizard
-    const wizardId = await odoo.call('sale.advance.payment.inv', 'create', [{ advance_payment_method: 'percentage', amount: 100, sale_order_ids: [[6, 0, [orderId]]] }]);
-    await odoo.call('sale.advance.payment.inv', 'create_invoices', [[wizardId]]);
-    // Find the draft invoice and confirm it
+    // Get existing invoice IDs on this order
     const order = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
-    const invoiceIds = order[0].invoice_ids || [];
+    let invoiceIds = order[0].invoice_ids || [];
+    // If no invoice, create one via HTTP session (bypasses XML-RPC restrictions)
+    if (!invoiceIds.length) {
+      const https = require('https');
+      const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/, '');
+      const authPayload = JSON.stringify({ jsonrpc: '2.0', method: 'call', params: { db: process.env.ODOO_DB || 'kyraan', login: process.env.ODOO_USERNAME, password: process.env.ODOO_PASSWORD } });
+      const sid = await new Promise((resolve, reject) => {
+        const u = new URL(ODOO_URL + '/web/session/authenticate');
+        const req2 = https.request({ hostname: u.hostname, path: u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(authPayload) } }, (r2) => {
+          const cookies = r2.headers['set-cookie'] || [];
+          const s = cookies.map(c => c.split(';')[0]).find(c => c.startsWith('session_id='));
+          s ? resolve(s) : reject(new Error('No session'));
+          r2.resume();
+        });
+        req2.on('error', reject); req2.write(authPayload); req2.end();
+      });
+      // Call create_invoices via JSON-RPC over HTTP with session cookie
+      const rpcPayload = JSON.stringify({ jsonrpc: '2.0', method: 'call', id: 1, params: { model: 'sale.order', method: 'action_invoice_create', args: [[orderId]], kwargs: { grouped: false, final: false } } });
+      const rpcResult = await new Promise((resolve, reject) => {
+        const u = new URL(ODOO_URL + '/web/dataset/call_kw');
+        const req3 = https.request({ hostname: u.hostname, path: u.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(rpcPayload), 'Cookie': sid } }, (r3) => {
+          let body = ''; r3.on('data', d => body += d); r3.on('end', () => { try { resolve(JSON.parse(body)); } catch(e) { reject(e); } });
+        });
+        req3.on('error', reject); req3.write(rpcPayload); req3.end();
+      });
+      if (rpcResult.error) throw new Error(rpcResult.error.data?.message || JSON.stringify(rpcResult.error));
+      const order2 = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
+      invoiceIds = order2[0].invoice_ids || [];
+    }
+    // Post all draft invoices
     if (invoiceIds.length) {
       const drafts = await odoo.call('account.move', 'search', [[['id', 'in', invoiceIds], ['state', '=', 'draft']]]);
       if (drafts.length) await odoo.call('account.move', 'action_post', [drafts]);
