@@ -268,61 +268,54 @@ app.post('/order/:id/deliver', async (req, res) => {
 app.post('/order/:id/pay', async (req, res) => {
   const orderId = parseInt(req.params.id);
   const { payMethod } = req.body || {};
-  // Journal IDs: Cash=9, Bank(Mbusiness)=6
+  // Journal: Перевод=6 (Bank/Mbusiness), Наличные=9 (Cash)
   const journalId = payMethod === 'Перевод' ? 6 : 9;
   const https = require('https');
   const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/, '');
-  const ODOO_DB  = process.env.ODOO_DB  || 'kyraan';
+  const ODOO_DB = process.env.ODOO_DB || 'kyraan';
 
-  async function odooSession() {
-    const authPayload = JSON.stringify({ jsonrpc:'2.0', method:'call', params:{ db:ODOO_DB, login:process.env.ODOO_USERNAME, password:process.env.ODOO_PASSWORD }});
-    return new Promise((resolve, reject) => {
-      const u = new URL(ODOO_URL + '/web/session/authenticate');
-      const r = https.request({hostname:u.hostname, path:u.pathname, method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(authPayload)}}, res2 => {
-        const sid = (res2.headers['set-cookie']||[]).map(c=>c.split(';')[0]).find(c=>c.startsWith('session_id='));
-        sid ? resolve(sid) : reject(new Error('No session'));
-        res2.resume();
-      });
-      r.on('error', reject); r.write(authPayload); r.end();
-    });
-  }
-
-  async function odooRpc(sid, model, method, args, kwargs) {
-    const body = JSON.stringify({jsonrpc:'2.0', method:'call', id:1, params:{model, method, args, kwargs:kwargs||{}}});
+  async function sessionRpc(sid, model, method, args, kwargs) {
+    const body = JSON.stringify({jsonrpc:'2.0',method:'call',id:1,params:{model,method,args,kwargs:kwargs||{}}});
     return new Promise((resolve, reject) => {
       const u = new URL(ODOO_URL + '/web/dataset/call_kw');
-      const r = https.request({hostname:u.hostname, path:u.pathname, method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body),'Cookie':sid}}, res2 => {
-        let data = ''; res2.on('data', d => data+=d); res2.on('end', () => {
-          const json = JSON.parse(data);
-          if (json.error) reject(new Error(json.error.data?.message || JSON.stringify(json.error)));
-          else resolve(json.result);
+      const r = https.request({hostname:u.hostname,path:u.pathname,method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body),'Cookie':sid}}, res2 => {
+        let d=''; res2.on('data',c=>d+=c); res2.on('end',()=>{
+          const j=JSON.parse(d);
+          if(j.error) reject(new Error(j.error.data?.message||JSON.stringify(j.error))); else resolve(j.result);
         });
       });
-      r.on('error', reject); r.write(body); r.end();
+      r.on('error',reject); r.write(body); r.end();
     });
   }
 
   try {
     if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
-    const sid = await odooSession();
-    // Check existing invoices
-    const order = await odooRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
+    // Authenticate via HTTP session
+    const authPayload = JSON.stringify({jsonrpc:'2.0',method:'call',params:{db:ODOO_DB,login:process.env.ODOO_USERNAME,password:process.env.ODOO_PASSWORD}});
+    const sid = await new Promise((resolve, reject) => {
+      const u = new URL(ODOO_URL + '/web/session/authenticate');
+      const r = https.request({hostname:u.hostname,path:u.pathname,method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(authPayload)}}, res2 => {
+        const s=(res2.headers['set-cookie']||[]).map(c=>c.split(';')[0]).find(c=>c.startsWith('session_id='));
+        s?resolve(s):reject(new Error('No session')); res2.resume();
+      });
+      r.on('error',reject); r.write(authPayload); r.end();
+    });
+    // Get existing invoice IDs
+    const order = await sessionRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
     let invoiceIds = order[0].invoice_ids || [];
-    // Create invoice via wizard if none exists
+    // Create invoice via wizard if none
     if (!invoiceIds.length) {
-      const wizId = await odooRpc(sid, 'sale.advance.payment.inv', 'create', [{advance_payment_method:'delivered', sale_order_ids:[orderId]}]);
-      await odooRpc(sid, 'sale.advance.payment.inv', 'create_invoices', [[wizId]]);
-      const order2 = await odooRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
+      const wizId = await sessionRpc(sid, 'sale.advance.payment.inv', 'create', [{advance_payment_method:'delivered',sale_order_ids:[orderId]}]);
+      await sessionRpc(sid, 'sale.advance.payment.inv', 'create_invoices', [[wizId]]);
+      const order2 = await sessionRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
       invoiceIds = order2[0].invoice_ids || [];
     }
     if (!invoiceIds.length) throw new Error('Не удалось создать счёт. Проверьте доставку.');
-    // Find draft invoices, set journal, then post
-    const drafts = await odooRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
-    if (!drafts.length) throw new Error('Счёт уже подтверждён');
-    // Set payment journal (метод платежа)
-    await odooRpc(sid, 'account.move', 'write', [drafts, { journal_id: journalId }]);
-    // Confirm the invoice
-    await odooRpc(sid, 'account.move', 'action_post', [drafts]);
+    // Set journal on draft invoices
+    const drafts = await sessionRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
+    if (drafts.length) await sessionRpc(sid, 'account.move', 'write', [drafts, {invoice_payment_method_line_id: false, journal_id: journalId}]);
+    // Confirm (action_post)
+    if (drafts.length) await sessionRpc(sid, 'account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
 });
