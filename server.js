@@ -1,4 +1,4 @@
-// server.js
+// server.js // v2
 require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
@@ -270,7 +270,7 @@ app.post('/order/:id/confirm', async (req, res) => {
       const orderId = parseInt(req.params.id);res.status(500).json({ error: err.message }); }
          });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3001; 
 app.listen(PORT, () => {
       console.log('TT Bridge running on port ' + PORT);
       console.log('Odoo: ' + process.env.ODOO_URL);
