@@ -236,6 +236,15 @@ app.post('/order/:id/confirm', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/debug/order/:id', async (req, res) => {
+      try {
+              const oid = parseInt(req.params.id);
+              const order = await odoo.call('sale.order', 'read', [[oid]], { fields: ['name','state','invoice_status','picking_ids','invoice_ids'] });
+              const pickings = order[0].picking_ids?.length ? await odoo.call('stock.picking', 'read', [order[0].picking_ids], { fields: ['id','name','state','sale_id'] }) : [];
+              const invoices = order[0].invoice_ids?.length ? await odoo.call('account.move', 'read', [order[0].invoice_ids], { fields: ['id','name','state','payment_state','partner_id'] }) : [];
+              res.json({ ok: true, order: order[0], pickings, invoices });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log('TT Bridge running on port ' + PORT);
