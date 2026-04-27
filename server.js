@@ -268,24 +268,55 @@ app.post('/order/:id/deliver', async (req, res) => {
 app.post('/order/:id/pay', async (req, res) => {
   const orderId = parseInt(req.params.id);
   const { payMethod } = req.body || {};
+  const https = require('https');
+  const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/, '');
+  const ODOO_DB  = process.env.ODOO_DB  || 'kyraan';
+
+  async function odooSession() {
+    const authPayload = JSON.stringify({ jsonrpc:'2.0', method:'call', params:{ db:ODOO_DB, login:process.env.ODOO_USERNAME, password:process.env.ODOO_PASSWORD }});
+    return new Promise((resolve, reject) => {
+      const u = new URL(ODOO_URL + '/web/session/authenticate');
+      const r = https.request({hostname:u.hostname, path:u.pathname, method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(authPayload)}}, res2 => {
+        const sid = (res2.headers['set-cookie']||[]).map(c=>c.split(';')[0]).find(c=>c.startsWith('session_id='));
+        sid ? resolve(sid) : reject(new Error('No session'));
+        res2.resume();
+      });
+      r.on('error', reject); r.write(authPayload); r.end();
+    });
+  }
+
+  async function odooRpc(sid, model, method, args, kwargs) {
+    const body = JSON.stringify({jsonrpc:'2.0', method:'call', id:1, params:{model, method, args, kwargs:kwargs||{}}});
+    return new Promise((resolve, reject) => {
+      const u = new URL(ODOO_URL + '/web/dataset/call_kw');
+      const r = https.request({hostname:u.hostname, path:u.pathname, method:'POST', headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body),'Cookie':sid}}, res2 => {
+        let data = ''; res2.on('data', d => data+=d); res2.on('end', () => {
+          const json = JSON.parse(data);
+          if (json.error) reject(new Error(json.error.data?.message || JSON.stringify(json.error)));
+          else resolve(json.result);
+        });
+      });
+      r.on('error', reject); r.write(body); r.end();
+    });
+  }
+
   try {
     if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
-    // Get existing invoice IDs
-    const order = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
+    const sid = await odooSession();
+    // Check existing invoices
+    const order = await odooRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
     let invoiceIds = order[0].invoice_ids || [];
-    // If no invoice yet, create one via wizard
+    // Create invoice via wizard using browser session (works unlike XML-RPC)
     if (!invoiceIds.length) {
-      // sale_order_ids takes plain array (not ORM command) when called via XML-RPC
-      const wizardId = await odoo.call('sale.advance.payment.inv', 'create', [{ advance_payment_method: 'delivered', sale_order_ids: [orderId] }]);
-      await odoo.call('sale.advance.payment.inv', 'create_invoices', [[wizardId]]);
-      const order2 = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
+      const wizId = await odooRpc(sid, 'sale.advance.payment.inv', 'create', [{advance_payment_method:'delivered', sale_order_ids:[orderId]}]);
+      await odooRpc(sid, 'sale.advance.payment.inv', 'create_invoices', [[wizId]]);
+      const order2 = await odooRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
       invoiceIds = order2[0].invoice_ids || [];
     }
-    if (!invoiceIds.length) throw new Error('Не удалось создать счёт');
+    if (!invoiceIds.length) throw new Error('Не удалось создать счёт. Проверьте доставку.');
     // Post all draft invoices
-    const drafts = await odoo.call('account.move', 'search', [[['id', 'in', invoiceIds], ['state', '=', 'draft']]]);
-    if (!drafts.length) throw new Error('Счёт уже подтверждён');
-    await odoo.call('account.move', 'action_post', [drafts]);
+    const drafts = await odooRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
+    if (drafts.length) await odooRpc(sid, 'account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
 });
