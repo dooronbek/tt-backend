@@ -223,6 +223,12 @@ app.post('/order/:id/confirm', async (req, res) => {
               } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/contacts/:partnerId', async (req, res) => {
+    try {
+          const contacts = await odoo.call('res.partner', 'search_read', [[['parent_id', '=', parseInt(req.params.partnerId)], ['type', '=', 'contact']]], { fields: ['id', 'name', 'phone', 'function'], limit: 20 });
+          res.json({ ok: true, contacts: contacts.map(c => ({ id: c.id, name: c.name, phone: c.phone || '', job: c.function || '' })) });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
               console.log('TT Bridge running on port ' + PORT);
