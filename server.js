@@ -270,13 +270,21 @@ app.post('/order/:id/pay', async (req, res) => {
   const { payMethod } = req.body || {};
   try {
     if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
-    // Get invoice IDs on this order
+    // Get existing invoice IDs
     const order = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
-    const invoiceIds = order[0].invoice_ids || [];
-    if (!invoiceIds.length) throw new Error('Нет счёта для оплаты. Сначала оформите доставку.');
-    // Find draft invoices and post them
+    let invoiceIds = order[0].invoice_ids || [];
+    // If no invoice yet, create one via wizard
+    if (!invoiceIds.length) {
+      // sale_order_ids takes plain array (not ORM command) when called via XML-RPC
+      const wizardId = await odoo.call('sale.advance.payment.inv', 'create', [{ advance_payment_method: 'delivered', sale_order_ids: [orderId] }]);
+      await odoo.call('sale.advance.payment.inv', 'create_invoices', [[wizardId]]);
+      const order2 = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
+      invoiceIds = order2[0].invoice_ids || [];
+    }
+    if (!invoiceIds.length) throw new Error('Не удалось создать счёт');
+    // Post all draft invoices
     const drafts = await odoo.call('account.move', 'search', [[['id', 'in', invoiceIds], ['state', '=', 'draft']]]);
-    if (!drafts.length) throw new Error('Счёт уже подтверждён или оплачен.');
+    if (!drafts.length) throw new Error('Счёт уже подтверждён');
     await odoo.call('account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
