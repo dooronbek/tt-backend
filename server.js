@@ -313,7 +313,7 @@ app.post('/order/:id/pay', async (req, res) => {
     if (!invoiceIds.length) throw new Error('Не удалось создать счёт. Проверьте доставку.');
     // Set journal on draft invoices
     const drafts = await sessionRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
-    if (drafts.length) await sessionRpc(sid, 'account.move', 'write', [drafts, {invoice_payment_method_line_id: false, journal_id: journalId}]);
+    if (drafts.length) await sessionRpc(sid, 'account.move', 'write', [drafts, {journal_id: journalId}]);
     // Confirm (action_post)
     if (drafts.length) await sessionRpc(sid, 'account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
