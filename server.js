@@ -267,10 +267,13 @@ app.post('/order/:id/deliver', async (req, res) => {
 
 app.post('/order/:id/pay', async (req, res) => {
   const orderId = parseInt(req.params.id);
+  const { payMethod } = req.body || {};
   try {
-    const invoiceIds = await odoo.call('sale.order', '_create_invoices', [[orderId]]);
-    const ids = Array.isArray(invoiceIds) ? invoiceIds : [invoiceIds];
-    res.json({ ok: true, orderId, invoiceIds: ids });
+    if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
+    // Use wizard - public method
+    const wizardId = await odoo.call('sale.advance.payment.inv', 'create', [{ advance_payment_method: 'delivered', sale_order_ids: [[6, 0, [orderId]]] }]);
+    await odoo.call('sale.advance.payment.inv', 'create_invoices', [[wizardId]]);
+    res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
 });
 
