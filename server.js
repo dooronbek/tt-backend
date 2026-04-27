@@ -277,9 +277,38 @@ app.post('/order/:id/pay', async (req, res) => {
 app.get('/picking/:id/pdf', async (req, res) => {
   const pickingId = parseInt(req.params.id);
   try {
-    const result = await odoo.call('ir.actions.report', 'render_qweb_pdf', ['stock.action_report_delivery', [[pickingId]]], {});
-    const pdfBase64 = Array.isArray(result) ? result[0] : result;
-    const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+    const https = require('https');
+    const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/, '');
+    const ODOO_DB = process.env.ODOO_DB || 'kyraan';
+    const ODOO_USER = process.env.ODOO_USERNAME;
+    const ODOO_PASS = process.env.ODOO_PASSWORD;
+    const authPayload = JSON.stringify({ jsonrpc: '2.0', method: 'call', params: { db: ODOO_DB, login: ODOO_USER, password: ODOO_PASS } });
+    const sessionId = await new Promise((resolve, reject) => {
+      const urlObj = new URL(ODOO_URL + '/web/session/authenticate');
+      const opts = { hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(authPayload) } };
+      const authReq = https.request(opts, (authRes) => {
+        const cookies = authRes.headers['set-cookie'] || [];
+        const sid = cookies.map(c => c.split(';')[0]).find(c => c.startsWith('session_id='));
+        if (sid) resolve(sid); else reject(new Error('Auth failed - no session cookie'));
+        authRes.resume();
+      });
+      authReq.on('error', reject);
+      authReq.write(authPayload);
+      authReq.end();
+    });
+    const pdfBuffer = await new Promise((resolve, reject) => {
+      const urlObj = new URL(ODOO_URL + '/report/pdf/stock.action_report_delivery/' + pickingId);
+      const opts = { hostname: urlObj.hostname, path: urlObj.pathname, method: 'GET', headers: { 'Cookie': sessionId } };
+      const pdfReq = https.request(opts, (pdfRes) => {
+        if (pdfRes.statusCode !== 200) { let b=''; pdfRes.on('data',d=>b+=d); pdfRes.on('end',()=>reject(new Error('PDF status '+pdfRes.statusCode+': '+b.substring(0,100)))); return; }
+        const chunks = [];
+        pdfRes.on('data', chunk => chunks.push(chunk));
+        pdfRes.on('end', () => resolve(Buffer.concat(chunks)));
+        pdfRes.on('error', reject);
+      });
+      pdfReq.on('error', reject);
+      pdfReq.end();
+    });
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', 'attachment; filename=nakladnaya_' + pickingId + '.pdf');
     res.send(pdfBuffer);
