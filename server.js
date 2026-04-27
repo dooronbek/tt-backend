@@ -236,6 +236,20 @@ app.get('/partner-phone/:id', async (req, res) => {
           res.json({ ok: true, phone });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
+app.get('/partner-vat/:id', async (req, res) => {
+    try {
+          const p = await odoo.call('res.partner', 'read', [[parseInt(req.params.id)]], { fields: ['vat'] });
+          res.json({ ok: true, vat: p[0]?.vat || '' });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.patch('/partner/:id/vat', async (req, res) => {
+    const { vat } = req.body;
+    if (!vat) return res.status(400).json({ error: 'vat required' });
+    try {
+          await odoo.call('res.partner', 'write', [[parseInt(req.params.id)], { vat }]);
+          res.json({ ok: true, vat });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
               console.log('TT Bridge running on port ' + PORT);
