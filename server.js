@@ -310,7 +310,7 @@ app.post('/order/:id/pay', async (req, res) => {
     if (!invoiceIds.length) throw new Error('Не удалось создать счёт. Проверьте доставку.');
     const drafts = await sessionRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
     if (!drafts.length) throw new Error('Счёт уже подтверждён');
-    await sessionRpc(sid, 'account.move', 'write', [drafts, {journal_id: journalId, invoice_payment_method_line_id: pmLineId}]);
+    await sessionRpc(sid, 'account.move', 'write', [drafts, {journal_id: journalId}]);
     await sessionRpc(sid, 'account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
