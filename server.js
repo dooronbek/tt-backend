@@ -1,13 +1,16 @@
-// server.js // v2
-require('dotenv').config();
+const orderId = parseInt(req.params.id);res.status(500).json({ error: err.mesrequire('dotenv').config();
 const express = require('express');
-const cors    = require('cors');
+coconst orderId = parseInt(req.params.id);
+  try {
+            await odoo.call('sale.order', 'action_confirm', [[orderId]]);
+            res.json({ ok: true, orderId });
+  } catch (err) { res.status(500).json({ error: err.mesnst cors    = require('cors');
 const multer  = require('multer');
 const odoo    = require('./odoo');
 const { fetchPlaceFromLink } = require('./twogis');
 
 const app    = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memorySthorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
