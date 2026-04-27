@@ -1,13 +1,12 @@
-// server.js
-require('dotenv').config();
+memorySthoragerequire('dotenv').config();
 const express = require('express');
-const cors    = require('cors');
+memoryStorageconst cors    = require('cors');
 const multer  = require('multer');
 const odoo    = require('./odoo');
 const { fetchPlaceFromLink } = require('./twogis');
 
 const app    = express();
-const upload = multer({ storage: multer.memorySthorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memorhySthorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
