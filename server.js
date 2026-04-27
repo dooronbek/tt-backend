@@ -7,7 +7,7 @@ const odoo    = require('./odoo');
 const { fetchPlaceFromLink } = require('./twogis');
 
 const app    = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memorySthorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
@@ -194,7 +194,7 @@ app.post('/order', async (req, res) => {
                                           price_unit: l.price,
                           }]),
             }]);
-                      res.json({ ok: true, orderId });
+                      await odoo.call('sale.order', 'action_confirm', [[orderId]]); res.json({ ok: true, orderId });
           } catch (err) {
                       console.error('Create order error:', err);
                       res.status(500).json({ error: err.message });
@@ -206,7 +206,7 @@ app.post('/order/:id/confirm', async (req, res) => {
           const orderId = parseInt(req.params.id);
           try {
                       await odoo.call('sale.order', 'action_confirm', [[orderId]]);
-                      res.json({ ok: true, orderId });
+                      await odoo.call('sale.order', 'action_confirm', [[orderId]]); res.json({ ok: true, orderId });
           } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
