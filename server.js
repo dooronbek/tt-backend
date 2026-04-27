@@ -245,6 +245,14 @@ app.get('/debug/order/:id', async (req, res) => {
               res.json({ ok: true, order: order[0], pickings, invoices });
       } catch (err) { res.status(500).json({ error: err.message }); }
 });
+app.get('/debug/picking/:id', async (req, res) => {
+      try {
+              const pid = parseInt(req.params.id);
+              const picking = await odoo.call('stock.picking', 'read', [[pid]], { fields: ['id','name','state','move_ids','move_line_ids','location_id','location_dest_id','partner_id','origin'] });
+              const warehouses = await odoo.call('stock.warehouse', 'search_read', [[]], { fields: ['id','name','code','lot_stock_id'] });
+              res.json({ ok: true, picking: picking[0], warehouses });
+      } catch (err) { res.status(500).json({ error: err.message }); }
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log('TT Bridge running on port ' + PORT);
