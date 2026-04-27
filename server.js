@@ -270,9 +270,16 @@ app.post('/order/:id/pay', async (req, res) => {
   const { payMethod } = req.body || {};
   try {
     if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
-    // Use wizard - public method
-    const wizardId = await odoo.call('sale.advance.payment.inv', 'create', [{ advance_payment_method: 'delivered', sale_order_ids: [[6, 0, [orderId]]] }]);
+    // Create invoice via wizard
+    const wizardId = await odoo.call('sale.advance.payment.inv', 'create', [{ advance_payment_method: 'percentage', amount: 100, sale_order_ids: [[6, 0, [orderId]]] }]);
     await odoo.call('sale.advance.payment.inv', 'create_invoices', [[wizardId]]);
+    // Find the draft invoice and confirm it
+    const order = await odoo.call('sale.order', 'read', [[orderId]], { fields: ['invoice_ids'] });
+    const invoiceIds = order[0].invoice_ids || [];
+    if (invoiceIds.length) {
+      const drafts = await odoo.call('account.move', 'search', [[['id', 'in', invoiceIds], ['state', '=', 'draft']]]);
+      if (drafts.length) await odoo.call('account.move', 'action_post', [drafts]);
+    }
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
 });
