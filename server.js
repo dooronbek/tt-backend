@@ -268,11 +268,11 @@ app.post('/order/:id/deliver', async (req, res) => {
 app.post('/order/:id/pay', async (req, res) => {
   const orderId = parseInt(req.params.id);
   const { payMethod } = req.body || {};
-  // Journal: Перевод=6 (Bank/Mbusiness), Наличные=9 (Cash)
   const journalId = payMethod === 'Перевод' ? 6 : 9;
+  const pmLineId  = payMethod === 'Перевод' ? 5 : 7;
   const https = require('https');
-  const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/, '');
-  const ODOO_DB = process.env.ODOO_DB || 'kyraan';
+  const ODOO_URL = (process.env.ODOO_URL || 'https://kyraan.odoo.com').replace(/\/$/,'');
+  const ODOO_DB  = process.env.ODOO_DB || 'kyraan';
 
   async function sessionRpc(sid, model, method, args, kwargs) {
     const body = JSON.stringify({jsonrpc:'2.0',method:'call',id:1,params:{model,method,args,kwargs:kwargs||{}}});
@@ -281,7 +281,7 @@ app.post('/order/:id/pay', async (req, res) => {
       const r = https.request({hostname:u.hostname,path:u.pathname,method:'POST',headers:{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body),'Cookie':sid}}, res2 => {
         let d=''; res2.on('data',c=>d+=c); res2.on('end',()=>{
           const j=JSON.parse(d);
-          if(j.error) reject(new Error(j.error.data?.message||JSON.stringify(j.error))); else resolve(j.result);
+          if(j.error) reject(new Error(j.error.data&&j.error.data.message||JSON.stringify(j.error))); else resolve(j.result);
         });
       });
       r.on('error',reject); r.write(body); r.end();
@@ -290,7 +290,6 @@ app.post('/order/:id/pay', async (req, res) => {
 
   try {
     if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
-    // Authenticate via HTTP session
     const authPayload = JSON.stringify({jsonrpc:'2.0',method:'call',params:{db:ODOO_DB,login:process.env.ODOO_USERNAME,password:process.env.ODOO_PASSWORD}});
     const sid = await new Promise((resolve, reject) => {
       const u = new URL(ODOO_URL + '/web/session/authenticate');
@@ -300,10 +299,8 @@ app.post('/order/:id/pay', async (req, res) => {
       });
       r.on('error',reject); r.write(authPayload); r.end();
     });
-    // Get existing invoice IDs
     const order = await sessionRpc(sid, 'sale.order', 'read', [[orderId]], {fields:['invoice_ids']});
     let invoiceIds = order[0].invoice_ids || [];
-    // Create invoice via wizard if none
     if (!invoiceIds.length) {
       const wizId = await sessionRpc(sid, 'sale.advance.payment.inv', 'create', [{advance_payment_method:'delivered',sale_order_ids:[orderId]}]);
       await sessionRpc(sid, 'sale.advance.payment.inv', 'create_invoices', [[wizId]]);
@@ -311,12 +308,10 @@ app.post('/order/:id/pay', async (req, res) => {
       invoiceIds = order2[0].invoice_ids || [];
     }
     if (!invoiceIds.length) throw new Error('Не удалось создать счёт. Проверьте доставку.');
-    // Set journal on draft invoices
     const drafts = await sessionRpc(sid, 'account.move', 'search', [[['id','in',invoiceIds],['state','=','draft']]]);
-    if (drafts.length) const pmLineId = payMethod === 'Перевод' ? 5 : 7;
+    if (!drafts.length) throw new Error('Счёт уже подтверждён');
     await sessionRpc(sid, 'account.move', 'write', [drafts, {journal_id: journalId, invoice_payment_method_line_id: pmLineId}]);
-    // Confirm (action_post)
-    if (drafts.length) await sessionRpc(sid, 'account.move', 'action_post', [drafts]);
+    await sessionRpc(sid, 'account.move', 'action_post', [drafts]);
     res.json({ ok: true, orderId });
   } catch (err) { console.error('Pay error:', err); res.status(500).json({ error: err.message }); }
 });
