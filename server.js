@@ -244,7 +244,7 @@ app.get('/partner-vat/:id', async (req, res) => {
 });
 app.patch('/partner/:id/vat', async (req, res) => {
     const { vat } = req.body;
-    if (!vat) return res.status(400).json({ error: 'vat required' });
+      if (vat === undefined) return res.status(400).json({ error: 'vat required' });
     try {
           await odoo.call('res.partner', 'write', [[parseInt(req.params.id)], { vat }]);
           res.json({ ok: true, vat });
