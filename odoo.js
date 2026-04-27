@@ -96,7 +96,7 @@ class OdooClient {
     return await this.call('crm.lead', 'create', [{
       name,           // "ТТ GLOBUS"
       partner_id: partnerId,
-      type: 'lead',
+      type: opportunity',
     }]);
   }
 }
