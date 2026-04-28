@@ -216,7 +216,7 @@ app.patch('/partner/:id/retail-price', async (req, res) => {
   if (!price) return res.status(400).json({ error: 'price required' });
   try {
     const { sid } = await agentSession(req);
-    await sessionRpc(sid, 'res.partner', 'write', [[parseInt(req.params.id)], { x_retail_price: parseFloat(price) }]);
+    await sessionRpc(sid, 'res.partner', 'write', [[parseInt(req.params.id)], { x_studio_: parseFloat(price) }]);
     res.json({ ok:true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
