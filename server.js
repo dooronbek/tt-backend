@@ -365,7 +365,7 @@ app.post('/sync-payment-methods', async (req, res) => {
   try {
     // Get last 10 posted invoices
     const invoices = await odoo.call('account.move', 'search_read',
-      [[['move_type','=','out_invoice'],['state','=','posted']]],
+      [[['move_type','=','out_invoice'],['state','=','posted'],['invoice_origin','!=',false]]],
       { fields: ['id','name','preferred_payment_method_line_id','invoice_origin'], limit: 10, order: 'id desc' }
     );
     let updated = 0;
