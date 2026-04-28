@@ -91,7 +91,7 @@ app.patch('/lead/:id/stage', async (req, res) => {
   const { stage, notes } = req.body;
   if (!stage) return res.status(400).json({ error: 'stage required' });
   try {
-    const reverse = { 'Неактивные': 'New', 'На рассмотрении': 'Qualified', 'Активные': 'Proposition', 'Отказали': 'Cancelled' };
+    const reverse = { 'Неактивные': 'New', 'На рассмотрении': 'Qualified', 'Активные': 'Proposition', 'Отказали': 'Lost' };
     const stageIds = await odoo.call('crm.stage', 'search', [[['name', '=', reverse[stage] || stage]]], { limit: 1 });
     if (!stageIds.length) throw new Error('Stage not found: ' + stage);
     const vals = { stage_id: stageIds[0] };
