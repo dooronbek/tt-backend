@@ -140,7 +140,7 @@ app.get('/pipeline', async (req, res) => {
       if (!grouped[stage]) grouped[stage] = [];
       grouped[stage].push({ id:lead.id, name:lead.name, stage, rawStage:raw,
         contact:partF?partF[1]:'—', partnerId:partF?partF[0]:null,
-        manager:userF?userF[1]:'—', notes:lead.description||'', priority:lead.priority||'0', street:lead.street||'', city:lead.city||'' });
+        manager:userF?userF[1]:'—', notes:(lead.description||'').replace(/<[^>]*>/g,'').trim(), priority:lead.priority||'0', street:lead.street||'', city:lead.city||'' });
     }
     const ordered = {};
     for (const s of STAGE_ORDER) { if (grouped[s]) ordered[s] = grouped[s]; }
