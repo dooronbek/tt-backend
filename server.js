@@ -361,6 +361,34 @@ app.get('/picking/:id/pdf', async (req, res) => {
   } catch (err) { console.error('PDF error:', err); res.status(500).json({ error: err.message }); }
 });
 
+app.post('/sync-payment-methods', async (req, res) => {
+  try {
+    // Get last 10 posted invoices
+    const invoices = await odoo.call('account.move', 'search_read',
+      [[['move_type','=','out_invoice'],['state','=','posted']]],
+      { fields: ['id','name','preferred_payment_method_line_id','invoice_origin'], limit: 10, order: 'id desc' }
+    );
+    let updated = 0;
+    for (const inv of invoices) {
+      const pmF = m2o(inv.preferred_payment_method_line_id);
+      const pmId = pmF ? pmF[0] : null;
+      if (!pmId || !inv.invoice_origin) continue;
+      const orders = await odoo.call('sale.order', 'search_read',
+        [[['name','=',inv.invoice_origin]]],
+        { fields: ['id','preferred_payment_method_line_id'], limit: 1 }
+      );
+      if (!orders.length) continue;
+      const order = orders[0];
+      const curPmF = m2o(order.preferred_payment_method_line_id);
+      const curPmId = curPmF ? curPmF[0] : null;
+      if (curPmId === pmId) continue;
+      await odoo.call('sale.order', 'write', [[order.id], { preferred_payment_method_line_id: pmId }]);
+      updated++;
+    }
+    res.json({ ok: true, updated, total: invoices.length });
+  } catch (err) { console.error('Sync error:', err); res.status(500).json({ error: err.message }); }
+});
+
 app.post('/order/:id/confirm', async (req, res) => {
   try {
     await odoo.call('sale.order', 'action_confirm', [[parseInt(req.params.id)]]);
