@@ -290,7 +290,10 @@ app.post('/order/:id/pay', async (req, res) => {
   }
 
   try {
-    if (payMethod) await odoo.call('sale.order', 'write', [[orderId], { note: payMethod }]);
+    if (payMethod) {
+    const pmLineId = payMethod === 'Перевод' ? 5 : 7;
+    await odoo.call('sale.order', 'write', [[orderId], { note: payMethod, preferred_payment_method_line_id: pmLineId }]);
+  }
     const authPayload = JSON.stringify({jsonrpc:'2.0',method:'call',params:{db:ODOO_DB,login:process.env.ODOO_USERNAME,password:process.env.ODOO_PASSWORD}});
     const sid = await new Promise((resolve, reject) => {
       const u = new URL(ODOO_URL + '/web/session/authenticate');
