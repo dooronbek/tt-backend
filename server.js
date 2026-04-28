@@ -128,7 +128,7 @@ app.get('/pipeline', async (req, res) => {
     const { sid } = await agentSession(req);
     const domain = [['type','=','opportunity'],['user_id','=',req.agent.userId]];
     const leads = await sessionRpc(sid, 'crm.lead', 'search_read', [domain], {
-      fields: ['id','name','stage_id','partner_id','user_id','description','priority'],
+      fields: ['id','name','stage_id','partner_id','user_id','description','priority','street','city'],
       order: 'write_date desc', limit: 200,
     });
     const grouped = {};
@@ -140,7 +140,7 @@ app.get('/pipeline', async (req, res) => {
       if (!grouped[stage]) grouped[stage] = [];
       grouped[stage].push({ id:lead.id, name:lead.name, stage, rawStage:raw,
         contact:partF?partF[1]:'—', partnerId:partF?partF[0]:null,
-        manager:userF?userF[1]:'—', notes:lead.description||'', priority:lead.priority||'0' });
+        manager:userF?userF[1]:'—', notes:lead.description||'', priority:lead.priority||'0', street:lead.street||'', city:lead.city||'' });
     }
     const ordered = {};
     for (const s of STAGE_ORDER) { if (grouped[s]) ordered[s] = grouped[s]; }
