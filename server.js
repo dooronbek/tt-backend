@@ -329,26 +329,6 @@ app.get('/picking/:id/pdf', async (req, res) => {
   } catch (err) { res.status(500).json({ error:err.message }); }
 });
 
-app.post('/sync-payment-methods', async (req, res) => {
-  try {
-    const { sid } = await agentSession(req);
-    const invoices=await sessionRpc(sid,'account.move','search_read',
-      [[['move_type','=','out_invoice'],['state','=','posted'],['invoice_origin','!=',false]]],
-      {fields:['id','name','preferred_payment_method_line_id','invoice_origin'],order:'id desc'});
-    let updated=0;
-    for (const inv of invoices) {
-      const pmF=m2o(inv.preferred_payment_method_line_id); const pmId=pmF?pmF[0]:null;
-      if (!pmId||!inv.invoice_origin) continue;
-      const orders=await sessionRpc(sid,'sale.order','search_read',[[['name','=',inv.invoice_origin]]],{fields:['id','preferred_payment_method_line_id'],limit:1});
-      if (!orders.length) continue;
-      const order=orders[0]; const curF=m2o(order.preferred_payment_method_line_id);
-      if (curF&&curF[0]===pmId) continue;
-      await sessionRpc(sid,'sale.order','write',[[order.id],{preferred_payment_method_line_id:pmId}]);
-      updated++;
-    }
-    res.json({ ok:true, updated, total:invoices.length });
-  } catch (err) { res.status(500).json({ error:err.message }); }
-});
 
 const PORT=process.env.PORT||3001;
 app.listen(PORT,()=>{
