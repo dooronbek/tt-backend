@@ -260,7 +260,8 @@ app.get('/orders', async (req, res) => {
       const pF=m2o(o.partner_id); const pid=pF?pF[0]:null; const pick=pickMap[o.id]||{};
       return {id:o.id,name:o.name,state:o.state,partner_name:pF?pF[1]:'—',partner_id:pid,
         partner_vat:pid?(vatMap[pid]||''):'',amount_total:o.amount_total||0,date_order:o.date_order||'',
-        payment_method:o.note||'Наличные',delivered:pick.pickingState==='done',paid:o.invoice_status==='invoiced',
+        payment_method:(o.note||'').replace(/^(deferred|immediate):/,'') ||'Наличные',
+        pay_deferred:(o.note||'').startsWith('deferred:'),delivered:pick.pickingState==='done',paid:o.invoice_status==='invoiced',
         picking_id:pick.pickingId||null,picking_name:pick.pickingName||'',picking_state:pick.pickingState||'',
         order_lines:lineMap[o.id]||[]};
     });
@@ -269,12 +270,12 @@ app.get('/orders', async (req, res) => {
 });
 
 app.post('/order', async (req, res) => {
-  const { partnerId, leadId, lines, payMethod } = req.body;
+  const { partnerId, leadId, lines, payMethod, payDeferred } = req.body;
   if (!partnerId||!lines||!lines.length) return res.status(400).json({ error: 'partnerId and lines required' });
   try {
     const { sid } = await agentSession(req);
     const orderId = await sessionRpc(sid,'sale.order','create',[{partner_id:parseInt(partnerId),
-      opportunity_id:leadId?parseInt(leadId):false, note:payMethod||'Наличные',
+      opportunity_id:leadId?parseInt(leadId):false, note:(payDeferred?'deferred:':'immediate:')+( payMethod||'Наличные'),
       order_line:lines.map(l=>[0,0,{product_id:parseInt(l.productId),product_uom_qty:l.qty,price_unit:l.price}])}]);
     await sessionRpc(sid,'sale.order','action_confirm',[[orderId]]);
     res.json({ ok:true, orderId });
@@ -301,7 +302,9 @@ app.post('/order/:id/pay', async (req, res) => {
     const { sid } = await agentSession(req);
     if (payMethod) {
       const pmLineId=payMethod==='Перевод'?5:7;
-      await sessionRpc(sid,'sale.order','write',[[orderId],{note:payMethod,preferred_payment_method_line_id:pmLineId}]);
+      const currentNote = (await sessionRpc(sid,'sale.order','read',[[orderId]],{fields:['note']}))[0].note||'';
+      const prefix = currentNote.startsWith('deferred:') ? 'deferred:' : 'immediate:';
+      await sessionRpc(sid,'sale.order','write',[[orderId],{note:prefix+payMethod,preferred_payment_method_line_id:pmLineId}]);
     }
     const order=await sessionRpc(sid,'sale.order','read',[[orderId]],{fields:['invoice_ids']});
     let invoiceIds=order[0].invoice_ids||[];
