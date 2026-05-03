@@ -78,7 +78,7 @@ app.post('/login', async (req, res) => {
       const users = await sessionRpc(sid, 'res.users', 'read', [[uid]], { fields: ['property_warehouse_id', 'x_studio_kinetik_app', 'sale_team_id'] });
       const wf = Array.isArray(users[0].property_warehouse_id) ? users[0].property_warehouse_id : null;
       if (wf) { warehouseId = wf[0]; warehouseName = wf[1]; }
-      userRole = users[0].x_studio_kinetik_app || 'все';
+      userRole = users[0].x_studio_kinetik_app || 'Все';
     } catch(e) { console.error('user fields fetch error:', e.message); }
     const token = jwt.sign(
       { userId: uid, userName: name, odooUsername: username, odooPassword: password, warehouseId, warehouseName, userRole },
