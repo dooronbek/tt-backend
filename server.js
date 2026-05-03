@@ -232,7 +232,19 @@ app.get('/warehouses', async (req, res) => {
 app.get('/orders', async (req, res) => {
   try {
     const { sid } = await agentSession(req);
-    const domain = [['user_id','=',req.agent.userId]];
+    const { userId, userRole } = req.agent;
+    let domain;
+    if (userRole === 'Экспедитор') {
+      // Get all members of same sales team
+      const teams = await sessionRpc(sid, 'crm.team', 'search_read',
+        [[['member_ids', 'in', [userId]]]], { fields: ['member_ids'], limit: 5 });
+      const memberIds = [];
+      teams.forEach(t => { if (Array.isArray(t.member_ids)) memberIds.push(...t.member_ids); });
+      if (!memberIds.includes(userId)) memberIds.push(userId);
+      domain = [['user_id', 'in', [...new Set(memberIds)]], ['state', 'not in', ['draft','cancel']]];
+    } else {
+      domain = [['user_id','=',userId], ['state', 'not in', ['draft','cancel']]];
+    }
     const orders = await sessionRpc(sid, 'sale.order', 'search_read', [domain], {
       fields:['id','name','state','partner_id','amount_total','date_order','note','invoice_status','picking_ids'],
       order:'date_order desc', limit:100 });
