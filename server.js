@@ -260,8 +260,8 @@ app.get('/orders', async (req, res) => {
       const pF=m2o(o.partner_id); const pid=pF?pF[0]:null; const pick=pickMap[o.id]||{};
       return {id:o.id,name:o.name,state:o.state,partner_name:pF?pF[1]:'—',partner_id:pid,
         partner_vat:pid?(vatMap[pid]||''):'',amount_total:o.amount_total||0,date_order:o.date_order||'',
-        payment_method:(o.note||'').replace(/^(deferred|immediate):/,'') ||'Наличные',
-        pay_deferred:(o.note||'').startsWith('deferred:'),delivered:pick.pickingState==='done',paid:o.invoice_status==='invoiced',
+        payment_method:((o.note||'').replace(/<[^>]*>/g,'').trim()).replace(/^(deferred|immediate):/,'') ||'Наличные',
+        pay_deferred:((o.note||'').replace(/<[^>]*>/g,'').trim()).startsWith('deferred:'),delivered:pick.pickingState==='done',paid:o.invoice_status==='invoiced',
         picking_id:pick.pickingId||null,picking_name:pick.pickingName||'',picking_state:pick.pickingState||'',
         order_lines:lineMap[o.id]||[]};
     });
