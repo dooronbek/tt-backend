@@ -73,18 +73,18 @@ app.post('/login', async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'username and password required' });
   try {
     const { uid, name, sid } = await getSession(username, password);
-    // Fetch user's default warehouse
-    let warehouseId = null, warehouseName = null;
+    let warehouseId = null, warehouseName = null, userRole = 'все';
     try {
-      const users = await sessionRpc(sid, 'res.users', 'read', [[uid]], { fields: ['property_warehouse_id'] });
+      const users = await sessionRpc(sid, 'res.users', 'read', [[uid]], { fields: ['property_warehouse_id', 'x_studio_kinetik_app', 'sale_team_id'] });
       const wf = Array.isArray(users[0].property_warehouse_id) ? users[0].property_warehouse_id : null;
       if (wf) { warehouseId = wf[0]; warehouseName = wf[1]; }
-    } catch(e) { console.error('warehouse fetch error:', e.message); }
+      userRole = users[0].x_studio_kinetik_app || 'все';
+    } catch(e) { console.error('user fields fetch error:', e.message); }
     const token = jwt.sign(
-      { userId: uid, userName: name, odooUsername: username, odooPassword: password, warehouseId, warehouseName },
+      { userId: uid, userName: name, odooUsername: username, odooPassword: password, warehouseId, warehouseName, userRole },
       JWT_SECRET, { expiresIn: '30d' }
     );
-    res.json({ ok: true, token, userId: uid, userName: name, warehouseId, warehouseName });
+    res.json({ ok: true, token, userId: uid, userName: name, warehouseId, warehouseName, userRole });
   } catch (err) { res.status(401).json({ error: err.message }); }
 });
 
